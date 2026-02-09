@@ -1,0 +1,7 @@
+﻿{
+  "traceEvents": [
+    {"cat": "tpu", "dur": 1234},
+    {"cat": "host", "dur": 456},
+    {"cat": "tpu", "dur": 987}
+  ]
+}

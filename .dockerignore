@@ -1,0 +1,14 @@
+﻿__pycache__
+*.pyc
+.venv
+.venv*
+.env
+.env.*
+outputs
+report
+streamlit_outputs
+charts
+sample_outputs
+sample_data
+.git
+.gitignore

@@ -1,0 +1,40 @@
+﻿[build-system]
+requires = ["hatchling>=1.24.2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tpu-deploy-optimizer"
+version = "0.1.0"
+description = "TPU Model Deployment Utilization & Optimization Toolkit"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "TPU Deployment Optimizer" }]
+
+dependencies = [
+  "typer>=0.12.3",
+  "pydantic>=2.7.1",
+  "pandas>=2.2.2",
+  "numpy>=1.26.4",
+  "plotly>=5.22.0",
+]
+
+[project.optional-dependencies]
+streamlit = ["streamlit>=1.35.0"]
+monitoring = ["google-cloud-monitoring>=2.23.0"]
+
+[project.scripts]
+tpuopt = "tpuopt.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tpuopt"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.black]
+line-length = 100

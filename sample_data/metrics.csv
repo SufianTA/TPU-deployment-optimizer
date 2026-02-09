@@ -1,0 +1,6 @@
+﻿step_time_ms,host_input_time_ms,tpu_compute_time_ms,idle_time_ms,tokens_per_sec,batch_size,hbm_utilization
+120,50,60,10,5100,48,0.78
+115,46,62,7,5300,48,0.81
+130,55,58,17,4900,48,0.79
+118,44,64,10,5200,48,0.80
+125,52,59,14,5000,48,0.82

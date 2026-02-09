@@ -11,6 +11,7 @@ RUN pip install --no-cache-dir -U pip \
     && pip install --no-cache-dir .[streamlit,models]
 
 ENV PORT=8080
+ENV TPUOPT_SIMULATE=1
 EXPOSE 8080
 
 ENTRYPOINT ["streamlit", "run", "frontend/app.py", "--server.port=8080", "--server.address=0.0.0.0"]

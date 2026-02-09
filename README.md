@@ -58,6 +58,7 @@ Each run produces:
 
 ## Notes / assumptions
 - If TPU is not detected, the lab runs on CPU/GPU and labels results accordingly.
+- In Cloud Run, the benchmark uses simulated timing to keep the demo responsive.
 - Profiling artifacts are best‑effort; the app proceeds even if profiles are missing.
 - Recommendations are heuristic and should be validated with deeper profiling.
 

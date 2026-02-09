@@ -11,6 +11,7 @@ from backend.benchmarks.base import BenchResult, make_step_metrics
 from backend.benchmarks.jax_bench import run_jax_benchmark
 from backend.benchmarks.tf_bench import run_tf_benchmark
 from backend.benchmarks.torch_bench import run_torch_benchmark
+import os
 
 
 MODEL_CARDS: Dict[str, Dict[str, str]] = {
@@ -90,7 +91,9 @@ def _simulate_benchmark(config: RunConfig, reason: str) -> BenchResult:
     return BenchResult(run_id=run_id, config=config, metrics=metrics, notes=notes)
 
 
-def run_benchmark(config: RunConfig, step_callback=None) -> BenchResult:
+def run_benchmark(config: RunConfig, step_callback=None, force_simulate: bool = False) -> BenchResult:
+    if force_simulate or os.getenv("TPUOPT_SIMULATE", "").lower() in {"1", "true", "yes"}:
+        return _simulate_benchmark(config, "Simulation enabled for this environment")
     if config.framework == "tensorflow":
         try:
             return run_tf_benchmark(config, step_callback=step_callback)

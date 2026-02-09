@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+import os
 
 from backend.analysis.charts import render_charts
 from backend.analysis.deep_profile import parse_trace_events
@@ -151,7 +152,12 @@ def _run_and_analyze() -> None:
         progress.progress(min(1.0, step / total))
         log_box.text(f"Completed step {step}/{total}")
 
-    result = run_benchmark(config, step_callback=_on_step)
+    force_sim = False
+    if os.getenv("K_SERVICE") or os.getenv("TPUOPT_SIMULATE", "").lower() in {"1", "true", "yes"}:
+        force_sim = True
+        st.info("Running in Cloud Run or simulation mode. Benchmark will use synthetic timing.")
+
+    result = run_benchmark(config, step_callback=_on_step, force_simulate=force_sim)
 
     run_dir = ARTIFACTS_DIR / result.run_id
     run_dir.mkdir(parents=True, exist_ok=True)

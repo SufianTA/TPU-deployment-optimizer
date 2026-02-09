@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 import os
+import plotly.express as px
 
 from backend.analysis.charts import render_charts
 from backend.analysis.deep_profile import parse_trace_events
@@ -28,7 +29,57 @@ ARTIFACTS_DIR.mkdir(exist_ok=True)
 MODEL_CARDS = list_models()
 
 
-st.title("TPU Deployment Optimization Lab")
+st.markdown(
+    """
+<style>
+    .app-hero {
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0b3b6f 100%);
+        color: #f8fafc;
+        padding: 24px 28px;
+        border-radius: 16px;
+        box-shadow: 0 12px 30px rgba(2, 6, 23, 0.35);
+        margin-bottom: 18px;
+    }
+    .hero-title { font-size: 34px; font-weight: 700; letter-spacing: 0.2px; }
+    .hero-sub { font-size: 15px; opacity: 0.85; margin-top: 6px; }
+    .kpi-card {
+        background: #0f172a;
+        color: #e2e8f0;
+        padding: 14px 16px;
+        border-radius: 12px;
+        box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.2);
+        min-height: 84px;
+    }
+    .kpi-label { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; opacity: 0.7; }
+    .kpi-value { font-size: 24px; font-weight: 700; margin-top: 6px; }
+    .section-title { font-size: 20px; font-weight: 600; margin: 12px 0 6px; }
+    .muted { color: #64748b; font-size: 13px; }
+    .status-pill {
+        display: inline-block;
+        background: #e2e8f0;
+        color: #0f172a;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        margin-left: 8px;
+    }
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
+st.markdown(
+    """
+<div class="app-hero">
+  <div class="hero-title">TPU Deployment Optimization Lab</div>
+  <div class="hero-sub">
+    Benchmark → Observe → Diagnose → Optimize. A practical lab for utilization, bottlenecks, and
+    configuration levers.
+  </div>
+</div>
+""",
+    unsafe_allow_html=True,
+)
 
 st.markdown(
     "This lab runs a small benchmark, collects metrics, and generates a structured optimization report. "
@@ -82,13 +133,13 @@ with st.sidebar.expander("Explain what's happening"):
     )
 
 
-st.subheader("Model Card")
+st.markdown("<div class='section-title'>Model Card</div>", unsafe_allow_html=True)
 st.write(f"**{model_card['title']}**")
 st.write(f"Input shape: {model_card['input_shape']}")
 st.write(f"Expected throughput: {model_card['throughput_notes']}")
 st.write(f"Typical bottlenecks: {model_card['bottlenecks']}")
 
-st.subheader("Workflow Explanations")
+st.markdown("<div class='section-title'>Workflow Explanations</div>", unsafe_allow_html=True)
 with st.expander("1) Select Model"):
     st.markdown("Pick a preloaded model. The lab uses lightweight versions to keep runs fast.")
 with st.expander("2) Configure Run"):
@@ -99,7 +150,7 @@ with st.expander("4) Analyze & Optimize"):
     st.markdown("Computes bottleneck attribution and generates evidence-backed recommendations.")
 
 
-st.subheader("Upload Artifacts")
+st.markdown("<div class='section-title'>Upload Artifacts</div>", unsafe_allow_html=True)
 col1, col2, col3 = st.columns(3)
 with col1:
     uploaded_metrics = st.file_uploader("Upload metrics.csv", type=["csv"], key="metrics")
@@ -118,6 +169,31 @@ if model_upload:
 
 
 status_box = st.empty()
+
+def _landing_charts():
+    sample_path = Path("sample_outputs/run_sample/metrics.csv")
+    if not sample_path.exists():
+        return
+    df = pd.read_csv(sample_path)
+    st.markdown("<div class='section-title'>Landing Preview</div>", unsafe_allow_html=True)
+    st.caption("Preview uses sample data. Run a benchmark for live results.")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.plotly_chart(
+            px.line(df, x="step", y="latency_ms", title="Latency (ms)"),
+            use_container_width=True,
+        )
+    with c2:
+        st.plotly_chart(
+            px.line(df, x="step", y="throughput_items_per_sec", title="Throughput"),
+            use_container_width=True,
+        )
+    with c3:
+        util = 1 - (df["idle_time_ms"] / df["latency_ms"]).fillna(0)
+        st.plotly_chart(
+            px.line(x=df["step"], y=util, title="Utilization Proxy"),
+            use_container_width=True,
+        )
 
 
 def _save_profile_zip(run_dir: Path, uploaded) -> None:
@@ -147,10 +223,13 @@ def _run_and_analyze() -> None:
     status_box.info("Running benchmark...")
     progress = st.progress(0)
     log_box = st.empty()
+    st.toast("Initializing benchmark run…", icon="⚙️")
 
     def _on_step(step, total):
         progress.progress(min(1.0, step / total))
-        log_box.text(f"Completed step {step}/{total}")
+        log_box.text(f"Step {step}/{total} complete")
+        if step == 1:
+            st.toast("Warmup complete, collecting metrics…", icon="📈")
 
     force_sim = False
     if os.getenv("K_SERVICE") or os.getenv("TPUOPT_SIMULATE", "").lower() in {"1", "true", "yes"}:
@@ -186,6 +265,7 @@ def _run_and_analyze() -> None:
     st.session_state["chart_outputs"] = chart_outputs
 
     status_box.success(f"Run complete. Artifacts saved under {run_dir}")
+    st.toast("Analysis complete. Charts and report are ready.", icon="✅")
 
 
 if run_button:
@@ -231,14 +311,34 @@ summary = st.session_state.get("summary")
 
 if summary:
     kpis = summary.kpis
-    st.subheader("Run Summary")
+    st.markdown("<div class='section-title'>Run Summary</div>", unsafe_allow_html=True)
     if summary.device_type != "tpu":
         st.info(f"TPU not detected. Running on {summary.device_type.upper()} baseline.")
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("p50 latency (ms)", f"{kpis.get('latency_p50_ms', 0):.2f}")
-    k2.metric("p90 latency (ms)", f"{kpis.get('latency_p90_ms', 0):.2f}")
-    k3.metric("p99 latency (ms)", f"{kpis.get('latency_p99_ms', 0):.2f}")
-    k4.metric("Throughput", f"{kpis.get('throughput_mean', 0):.2f} items/sec")
+    with k1:
+        st.markdown(
+            f\"\"\"<div class=\"kpi-card\"><div class=\"kpi-label\">p50 latency</div>
+            <div class=\"kpi-value\">{kpis.get('latency_p50_ms', 0):.2f} ms</div></div>\"\"\",
+            unsafe_allow_html=True,
+        )
+    with k2:
+        st.markdown(
+            f\"\"\"<div class=\"kpi-card\"><div class=\"kpi-label\">p90 latency</div>
+            <div class=\"kpi-value\">{kpis.get('latency_p90_ms', 0):.2f} ms</div></div>\"\"\",
+            unsafe_allow_html=True,
+        )
+    with k3:
+        st.markdown(
+            f\"\"\"<div class=\"kpi-card\"><div class=\"kpi-label\">p99 latency</div>
+            <div class=\"kpi-value\">{kpis.get('latency_p99_ms', 0):.2f} ms</div></div>\"\"\",
+            unsafe_allow_html=True,
+        )
+    with k4:
+        st.markdown(
+            f\"\"\"<div class=\"kpi-card\"><div class=\"kpi-label\">throughput</div>
+            <div class=\"kpi-value\">{kpis.get('throughput_mean', 0):.2f} items/s</div></div>\"\"\",
+            unsafe_allow_html=True,
+        )
 
     tabs = st.tabs(["Overview", "Bottlenecks", "Recommendations", "Deep Analysis", "Raw Metrics", "Export"])
 
@@ -355,4 +455,5 @@ if summary:
         }
     )
 else:
+    _landing_charts()
     st.info("Run a benchmark or upload metrics.csv to see analysis.")

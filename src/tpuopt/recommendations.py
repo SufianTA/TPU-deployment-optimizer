@@ -13,6 +13,14 @@ def _ratio(numer: float, denom: float) -> float:
     return float(numer / denom)
 
 
+def _get_metric(metrics: Dict[str, Dict[str, float]], key: str, fallback: str | None = None) -> Dict[str, float]:
+    if key in metrics:
+        return metrics.get(key, {})
+    if fallback and fallback in metrics:
+        return metrics.get(fallback, {})
+    return {}
+
+
 def build_recommendations(
     workload: Workload,
     metrics: Dict[str, Dict[str, float]],
@@ -21,19 +29,19 @@ def build_recommendations(
 ) -> List[Finding]:
     findings: List[Finding] = []
 
-    step = metrics.get("step_time_ms", {})
-    host = metrics.get("host_input_time_ms", {})
-    compute = metrics.get("tpu_compute_time_ms", {})
-    idle = metrics.get("idle_time_ms", {})
-    batch = metrics.get("batch_size", {})
-    hbm = metrics.get("hbm_utilization", {})
+    step = _get_metric(metrics, "latency_ms", fallback="step_time_ms")
+    host = _get_metric(metrics, "host_input_time_ms")
+    compute = _get_metric(metrics, "compute_time_ms", fallback="tpu_compute_time_ms")
+    idle = _get_metric(metrics, "idle_time_ms")
+    batch = _get_metric(metrics, "batch_size")
+    memory = _get_metric(metrics, "memory_mb", fallback="hbm_utilization")
 
     step_mean = step.get("mean", float("nan"))
     host_mean = host.get("mean", float("nan"))
     compute_mean = compute.get("mean", float("nan"))
     idle_mean = idle.get("mean", float("nan"))
     batch_mean = batch.get("mean", float("nan"))
-    hbm_mean = hbm.get("mean", float("nan"))
+    memory_mean = memory.get("mean", float("nan"))
 
     host_ratio = _ratio(host_mean, step_mean)
     idle_ratio = _ratio(idle_mean, step_mean)
@@ -47,7 +55,7 @@ def build_recommendations(
                 rank=rank,
                 symptom="High host input time relative to step time",
                 likely_root_cause="Input pipeline bottleneck (host-bound preprocessing or IO)",
-                check="host_input_time_ms / step_time_ms",
+                check="host_input_time_ms / latency_ms",
                 remediation="Increase input pipeline parallelism, enable dataset caching, and prefetch."
                 " Check CPU utilization and data source throughput.",
                 evidence={"host_ratio": round(host_ratio, 3)},
@@ -59,9 +67,9 @@ def build_recommendations(
         findings.append(
             Finding(
                 rank=rank,
-                symptom="High TPU idle time during steps",
+                symptom="High idle time during steps",
                 likely_root_cause="Underutilization from small batches or host stalls",
-                check="idle_time_ms / step_time_ms",
+                check="idle_time_ms / latency_ms",
                 remediation="Increase batch size (within memory limits) and overlap input pipeline"
                 " with compute. Consider asynchronous input feeding.",
                 evidence={"idle_ratio": round(idle_ratio, 3)},
@@ -73,9 +81,9 @@ def build_recommendations(
         findings.append(
             Finding(
                 rank=rank,
-                symptom="Low TPU compute time fraction",
+                symptom="Low compute time fraction",
                 likely_root_cause="Excessive host overheads or frequent re-compilation",
-                check="tpu_compute_time_ms / step_time_ms",
+                check="compute_time_ms / latency_ms",
                 remediation="Stabilize shapes, reduce Python overhead, and avoid dynamic control flow"
                 " that triggers recompilation.",
                 evidence={"compute_ratio": round(compute_ratio, 3)},
@@ -102,26 +110,26 @@ def build_recommendations(
         findings.append(
             Finding(
                 rank=rank,
-                symptom="Batch size appears small for TPU throughput",
+                symptom="Batch size appears small for throughput",
                 likely_root_cause="Conservative batch sizing or memory constraints",
                 check="batch_size (mean)",
-                remediation="Gradually increase batch size while monitoring HBM usage and"
-                " step time. Use gradient accumulation for training if needed.",
+                remediation="Gradually increase batch size while monitoring memory usage and"
+                " latency. Use gradient accumulation for training if needed.",
                 evidence={"batch_size_mean": round(batch_mean, 2)},
             )
         )
         rank += 1
 
-    if not np.isnan(hbm_mean) and hbm_mean > 0.85:
+    if not np.isnan(memory_mean) and memory_mean > 16000:
         findings.append(
             Finding(
                 rank=rank,
-                symptom="High HBM utilization",
+                symptom="High memory usage",
                 likely_root_cause="Memory pressure causing stalls or limited batch growth",
-                check="hbm_utilization",
+                check="memory_mb",
                 remediation="Use mixed precision (bfloat16), reduce activation size,"
                 " or increase sharding to spread memory.",
-                evidence={"hbm_utilization_mean": round(hbm_mean, 3)},
+                evidence={"memory_mb_mean": round(memory_mean, 1)},
             )
         )
         rank += 1
@@ -148,7 +156,7 @@ def build_recommendations(
                 likely_root_cause="Limited or incomplete profiling data",
                 check="Verify metrics CSV, XLA logs, and trace artifacts",
                 remediation="Collect a TPU profile with TensorBoard and include metrics"
-                " such as step_time_ms and tpu_compute_time_ms.",
+                " such as latency_ms and compute_time_ms.",
                 evidence=profile_artifacts,
             )
         )

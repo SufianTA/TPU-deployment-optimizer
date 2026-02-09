@@ -1,0 +1,38 @@
+﻿{
+  "run_id": "sample-run",
+  "model_id": "tf_mobilenet_v2",
+  "framework": "tensorflow",
+  "workload": "inference",
+  "device_type": "cpu",
+  "generated_at": "2026-02-09T21:00:10+00:00",
+  "attribution": {
+    "input_bound": 0.31,
+    "compute_bound": 0.57,
+    "compile_bound": 0.04,
+    "idle_bound": 0.08
+  },
+  "kpis": {
+    "latency_p50_ms": 120.0,
+    "latency_p90_ms": 140.0,
+    "latency_p99_ms": 140.0,
+    "throughput_mean": 259.5,
+    "utilization_proxy": 0.92
+  },
+  "recommendations": [
+    {
+      "title": "Input pipeline is host-bound",
+      "symptom": "High host input time relative to total latency",
+      "likely_root_cause": "Input preprocessing or IO is not keeping up with device execution",
+      "evidence": {"host_ratio": 0.31},
+      "confidence": 0.84,
+      "expected_impact": "Medium to high (10–35%)",
+      "action_steps": [
+        "Increase input pipeline parallelism and prefetch depth",
+        "Enable dataset caching or pre-shard input files",
+        "Move heavy preprocessing out of the hot path"
+      ]
+    }
+  ],
+  "notes": ["Sample output for reviewers"],
+  "artifacts": {}
+}

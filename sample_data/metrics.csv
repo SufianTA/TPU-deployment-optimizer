@@ -1,6 +1,6 @@
-﻿step_time_ms,host_input_time_ms,tpu_compute_time_ms,idle_time_ms,tokens_per_sec,batch_size,hbm_utilization
-120,50,60,10,5100,48,0.78
-115,46,62,7,5300,48,0.81
-130,55,58,17,4900,48,0.79
-118,44,64,10,5200,48,0.80
-125,52,59,14,5000,48,0.82
+﻿timestamp,step,batch_size,precision,device_type,warmup,latency_ms,throughput_items_per_sec,host_input_time_ms,compute_time_ms,idle_time_ms,compile_time_ms,memory_mb,notes
+2026-02-09T21:10:00+00:00,0,32,fp32,cpu,True,135.0,237.0,42.0,80.0,13.0,10.0,512,simulated
+2026-02-09T21:10:01+00:00,1,32,fp32,cpu,False,118.0,271.0,38.0,70.0,10.0,0.0,520,
+2026-02-09T21:10:02+00:00,2,32,fp32,cpu,False,121.0,264.5,39.0,71.0,11.0,0.0,525,
+2026-02-09T21:10:03+00:00,3,32,fp32,cpu,False,117.0,273.5,37.0,70.0,10.0,0.0,528,
+2026-02-09T21:10:04+00:00,4,32,fp32,cpu,False,119.0,268.9,38.0,70.0,11.0,0.0,530,

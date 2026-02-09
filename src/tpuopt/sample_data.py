@@ -1,8 +1,8 @@
 ﻿from __future__ import annotations
 
+import json
 from pathlib import Path
 
-import json
 import numpy as np
 import pandas as pd
 
@@ -12,23 +12,32 @@ def generate_sample_data(out_dir: Path) -> Path:
 
     rng = np.random.default_rng(42)
     steps = 120
-    step_time = rng.normal(120, 10, size=steps).clip(min=80)
-    host_time = rng.normal(45, 8, size=steps).clip(min=10)
-    compute_time = rng.normal(60, 6, size=steps).clip(min=30)
-    idle_time = rng.normal(15, 4, size=steps).clip(min=1)
+    latency = rng.normal(120, 10, size=steps).clip(min=80)
+    host_time = rng.normal(40, 6, size=steps).clip(min=10)
+    compute_time = rng.normal(70, 8, size=steps).clip(min=30)
+    idle_time = rng.normal(10, 3, size=steps).clip(min=1)
     tokens = rng.normal(5200, 350, size=steps).clip(min=1000)
     batch = rng.integers(32, 64, size=steps)
-    hbm = rng.normal(0.78, 0.05, size=steps).clip(min=0.5, max=0.95)
+    compile_time = np.zeros(steps)
+    compile_time[0] = 900
+    memory_mb = rng.normal(520, 20, size=steps).clip(min=400)
 
     df = pd.DataFrame(
         {
-            "step_time_ms": step_time,
-            "host_input_time_ms": host_time,
-            "tpu_compute_time_ms": compute_time,
-            "idle_time_ms": idle_time,
-            "tokens_per_sec": tokens,
+            "timestamp": pd.Timestamp.utcnow().isoformat(),
+            "step": np.arange(steps),
             "batch_size": batch,
-            "hbm_utilization": hbm,
+            "precision": "fp32",
+            "device_type": "cpu",
+            "warmup": [True if i < 3 else False for i in range(steps)],
+            "latency_ms": latency,
+            "throughput_items_per_sec": tokens,
+            "host_input_time_ms": host_time,
+            "compute_time_ms": compute_time,
+            "idle_time_ms": idle_time,
+            "compile_time_ms": compile_time,
+            "memory_mb": memory_mb,
+            "notes": "sample",
         }
     )
     metrics_path = out_dir / "metrics.csv"

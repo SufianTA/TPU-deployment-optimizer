@@ -12,13 +12,13 @@ from .utils import safe_float
 
 
 METRICS_COLUMNS = [
-    "step_time_ms",
+    "latency_ms",
     "host_input_time_ms",
-    "tpu_compute_time_ms",
+    "compute_time_ms",
     "idle_time_ms",
-    "tokens_per_sec",
+    "throughput_items_per_sec",
     "batch_size",
-    "hbm_utilization",
+    "memory_mb",
 ]
 
 
@@ -46,6 +46,9 @@ def discover_inputs(profile_dir: Path) -> Dict[str, Optional[Path]]:
 
 def load_metrics(metrics_csv: Path) -> pd.DataFrame:
     df = pd.read_csv(metrics_csv)
+    # Backward compat: map old step_time_ms to latency_ms
+    if "latency_ms" not in df.columns and "step_time_ms" in df.columns:
+        df["latency_ms"] = df["step_time_ms"]
     missing = [c for c in METRICS_COLUMNS if c not in df.columns]
     for col in missing:
         df[col] = float("nan")
@@ -97,6 +100,5 @@ def maybe_pull_gcp_metrics() -> Tuple[bool, Dict[str, float]]:
     except Exception:
         return False, {}
 
-    # Placeholder: real projects must customize metric filters and project IDs.
-    _ = monitoring_v3  # quiet unused import
+    _ = monitoring_v3
     return True, {}

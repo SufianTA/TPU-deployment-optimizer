@@ -1,6 +1,6 @@
 ﻿# Deploy to Cloud Run
 
-This deploys the Streamlit dashboard. It uses the root `Dockerfile`, which runs Streamlit on port `8080` as required by Cloud Run.
+This deploys the Streamlit dashboard using the root `Dockerfile`.
 
 ## Prereqs
 - A GCP project with billing enabled
@@ -11,6 +11,8 @@ This deploys the Streamlit dashboard. It uses the root `Dockerfile`, which runs 
 gcloud auth login
 gcloud config set project YOUR_PROJECT_ID
 
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com
+
 gcloud run deploy tpuopt-dashboard \
   --source . \
   --region us-central1 \
@@ -18,7 +20,5 @@ gcloud run deploy tpuopt-dashboard \
 ```
 
 ## Notes
-- If you want a CLI-only container, use `Dockerfile.cli` and build with:
-```bash
-docker build -f Dockerfile.cli -t tpuopt-cli .
-```
+- Cloud Run requires the container to listen on port `8080`.
+- The app will run on CPU/GPU by default and label TPU detection in the UI.

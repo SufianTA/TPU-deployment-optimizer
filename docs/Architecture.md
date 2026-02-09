@@ -1,19 +1,20 @@
 ﻿# Architecture
 
-The analyzer is intentionally simple: it reads profiling artifacts, normalizes metrics, applies heuristics, and emits a ranked recommendation list.
+The lab is structured as a benchmark pipeline with a deterministic output directory per run.
 
 ```mermaid
 graph TD
-  A[Model Deployment] --> B[Profiler Artifacts]
-  A --> C[Metrics CSV]
-  A --> D[XLA Compile Logs]
-  B --> E[Analyzer]
-  C --> E
-  D --> E
-  E --> F[Summary JSON]
-  E --> G[Recommendations MD]
-  E --> H[Charts]
-  F --> I[Report Renderer]
-  G --> I
-  I --> J[Markdown/HTML Report]
+  A[Select Model + Config] --> B[Benchmark Runner]
+  B --> C[metrics.csv]
+  B --> D[summary.json]
+  B --> E[profile/ (optional)]
+  C --> F[Analysis Engine]
+  F --> G[Attribution + Recommendations]
+  G --> H[Charts + Report]
+  H --> I[Export ZIP]
 ```
+
+## Modules
+- `backend/benchmarks`: framework runners and model registry
+- `backend/analysis`: scoring, charts, reports
+- `frontend/app.py`: Streamlit workflow UI

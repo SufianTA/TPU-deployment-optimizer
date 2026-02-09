@@ -1,22 +1,13 @@
 ﻿# Example Commands
 
 ```bash
-# generate sample data
-tpuopt sample-data
+# local run
+pip install .[streamlit,models]
+streamlit run frontend/app.py
 
-# analyze
- tpuopt analyze \
-  --profile_dir ./sample_data \
-  --model_name demo-model \
-  --workload inference \
-  --out_dir ./outputs
-
-# report
- tpuopt report --input ./outputs/summary.json --out_dir ./report
+# build and run container locally
+docker build -t tpuopt-lab .
+docker run -p 8080:8080 tpuopt-lab
 ```
 
-Expected outputs:
-- `./outputs/summary.json`
-- `./outputs/recommendations.md`
-- `./outputs/charts/step_time.html`
-- `./report/report.md`
+Sample outputs live under `sample_outputs/run_sample/`.

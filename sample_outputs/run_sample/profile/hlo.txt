@@ -1,0 +1,6 @@
+﻿HloModule demo
+
+%conv1 = convolution(%param0, %param1)
+%add1 = add(%conv1, %param2)
+%dot1 = dot(%add1, %param3)
+%reduce1 = reduce(%dot1)

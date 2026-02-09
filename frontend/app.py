@@ -9,6 +9,8 @@ import pandas as pd
 import streamlit as st
 
 from backend.analysis.charts import render_charts
+from backend.analysis.deep_profile import parse_trace_events
+from backend.analysis.xla_deep import parse_hlo_stats, parse_xla_compile_log
 from backend.analysis.io import analyze_metrics, load_metrics_df
 from backend.analysis.metrics import write_metrics_csv, write_summary_json
 from backend.analysis.report import build_exec_summary, write_reports
@@ -232,7 +234,7 @@ if summary:
     k3.metric("p99 latency (ms)", f"{kpis.get('latency_p99_ms', 0):.2f}")
     k4.metric("Throughput", f"{kpis.get('throughput_mean', 0):.2f} items/sec")
 
-    tabs = st.tabs(["Overview", "Bottlenecks", "Recommendations", "Raw Metrics", "Export"])
+    tabs = st.tabs(["Overview", "Bottlenecks", "Recommendations", "Deep Analysis", "Raw Metrics", "Export"])
 
     with tabs[0]:
         st.markdown("**Copy-ready executive summary**")
@@ -286,10 +288,39 @@ if summary:
                 st.markdown(f"- {step}")
 
     with tabs[3]:
+        st.markdown("**Kernel & compiler signals (best effort)**")
+        run_id = st.session_state.get("run_id")
+        run_dir = ARTIFACTS_DIR / run_id
+        profile_dir = run_dir / "profile"
+        trace_path = profile_dir / "trace.json"
+        if trace_path.exists():
+            parsed = parse_trace_events(trace_path)
+            st.markdown("Top ops by total time (us)")
+            st.dataframe(parsed["top_ops"])
+            st.markdown("Categories")
+            st.dataframe(parsed["categories"])
+        else:
+            st.info("No trace.json found. Upload a profile zip to populate kernel signals.")
+
+        hlo_path = profile_dir / "hlo.txt"
+        if hlo_path.exists():
+            st.markdown("HLO op counts (best effort)")
+            st.dataframe(parse_hlo_stats(hlo_path))
+        else:
+            st.caption("HLO/MLIR dump not found. If available, add it to the profile zip.")
+
+        xla_log = profile_dir / "xla_compile.log"
+        if xla_log.exists():
+            st.markdown("XLA compile log summary")
+            st.json(parse_xla_compile_log(xla_log))
+        else:
+            st.caption("XLA compile log not found.")
+
+    with tabs[4]:
         df = load_metrics_df(Path(st.session_state.get("metrics_path")))
         st.dataframe(df)
 
-    with tabs[4]:
+    with tabs[5]:
         run_id = st.session_state.get("run_id")
         run_dir = ARTIFACTS_DIR / run_id
         if run_dir.exists():

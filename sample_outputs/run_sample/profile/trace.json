@@ -1,0 +1,9 @@
+﻿{
+  "traceEvents": [
+    {"name": "conv2d", "cat": "tpu", "dur": 1200},
+    {"name": "matmul", "cat": "tpu", "dur": 900},
+    {"name": "all-reduce", "cat": "collective", "dur": 400},
+    {"name": "input_pipeline", "cat": "host", "dur": 300},
+    {"name": "conv2d", "cat": "tpu", "dur": 1100}
+  ]
+}

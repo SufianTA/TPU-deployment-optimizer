@@ -45,6 +45,9 @@ gcloud run deploy tpuopt-dashboard \
 - Upload a `metrics.csv` and optional profile zip to analyze existing runs.
 - Model upload (TF SavedModel zip or ONNX) is experimental and not required.
 
+## Deep profiling (optional)
+If you can collect TensorBoard profiler traces, drop `trace.json` in the profile zip and the lab will surface the top ops and categories. For TensorFlow, you can capture profiles with `tf.profiler.experimental.start/stop` or `tf.profiler.experimental.client.trace`.
+
 ## Artifacts
 Each run produces:
 - `artifacts/<run_id>/metrics.csv`

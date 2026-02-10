@@ -2,22 +2,24 @@
 
 import io
 import json
+import os
 import zipfile
 from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
-import streamlit as st
-import os
 import plotly.express as px
+import plotly.graph_objects as go
+import streamlit as st
 
 from backend.analysis.charts import render_charts
 from backend.analysis.deep_profile import parse_trace_events
-from backend.analysis.xla_deep import parse_hlo_stats, parse_xla_compile_log
 from backend.analysis.io import analyze_metrics, load_metrics_df
 from backend.analysis.metrics import write_metrics_csv, write_summary_json
 from backend.analysis.report import build_exec_summary, write_reports
 from backend.analysis.scoring import build_summary
 from backend.analysis.models import RunConfig
+from backend.analysis.xla_deep import parse_hlo_stats, parse_xla_compile_log
 from backend.benchmarks.registry import list_models, run_benchmark
 
 
@@ -29,77 +31,72 @@ ARTIFACTS_DIR.mkdir(exist_ok=True)
 MODEL_CARDS = list_models()
 
 
-st.markdown(
-    """
+def _style() -> None:
+    st.markdown(
+        """
 <style>
-    .app-hero {
-        background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0b3b6f 100%);
-        color: #f8fafc;
-        padding: 24px 28px;
-        border-radius: 16px;
-        box-shadow: 0 12px 30px rgba(2, 6, 23, 0.35);
-        margin-bottom: 18px;
-    }
-    .hero-title { font-size: 34px; font-weight: 700; letter-spacing: 0.2px; }
-    .hero-sub { font-size: 15px; opacity: 0.85; margin-top: 6px; }
-    .kpi-card {
-        background: #0f172a;
-        color: #e2e8f0;
-        padding: 14px 16px;
-        border-radius: 12px;
-        box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.2);
-        min-height: 84px;
-    }
-    .kpi-label { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; opacity: 0.7; }
-    .kpi-value { font-size: 24px; font-weight: 700; margin-top: 6px; }
-    .section-title { font-size: 20px; font-weight: 600; margin: 12px 0 6px; }
-    .muted { color: #64748b; font-size: 13px; }
-    .status-pill {
-        display: inline-block;
-        background: #e2e8f0;
-        color: #0f172a;
-        padding: 4px 10px;
-        border-radius: 999px;
-        font-size: 12px;
-        margin-left: 8px;
-    }
+  .hero {
+    background: linear-gradient(135deg, #0b1220 0%, #1e293b 50%, #0f4c81 100%);
+    color: #f8fafc;
+    padding: 24px 28px;
+    border-radius: 16px;
+    box-shadow: 0 12px 28px rgba(2, 6, 23, 0.35);
+    margin-bottom: 16px;
+  }
+  .hero-title { font-size: 32px; font-weight: 700; letter-spacing: 0.2px; }
+  .hero-sub { font-size: 14px; opacity: 0.85; margin-top: 6px; }
+  .kpi-card {
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 14px 16px;
+    border-radius: 12px;
+    box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.2);
+    min-height: 86px;
+  }
+  .kpi-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; opacity: 0.7; }
+  .kpi-value { font-size: 22px; font-weight: 700; margin-top: 6px; }
+  .section-title { font-size: 18px; font-weight: 600; margin: 10px 0 6px; }
+  .panel {
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    padding: 14px 16px;
+    border-radius: 12px;
+  }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
+  .badge-high { background: #dcfce7; color: #166534; }
+  .badge-med { background: #fef3c7; color: #92400e; }
+  .badge-low { background: #fee2e2; color: #991b1b; }
+  .muted { color: #64748b; font-size: 12px; }
 </style>
 """,
-    unsafe_allow_html=True,
-)
+        unsafe_allow_html=True,
+    )
+
+
+_style()
 
 st.markdown(
     """
-<div class="app-hero">
+<div class="hero">
   <div class="hero-title">TPU Deployment Optimization Lab</div>
-  <div class="hero-sub">
-    Benchmark → Observe → Diagnose → Optimize. A practical lab for utilization, bottlenecks, and
-    configuration levers.
-  </div>
+  <div class="hero-sub">Run a benchmark → collect metrics → diagnose bottlenecks → recommend config levers.</div>
 </div>
 """,
     unsafe_allow_html=True,
 )
 
 st.markdown(
-    "This lab runs a small benchmark, collects metrics, and generates a structured optimization report. "
-    "It does not tune kernels or rewrite your model, but it does surface likely bottlenecks and "
-    "actionable configuration levers."
+    "This tool runs a short, repeatable benchmark and derives utilization proxies from end‑to‑end metrics. "
+    "It does not tune kernels or rewrite models; it surfaces likely bottlenecks and configuration levers."
 )
-
-with st.expander("What the tool actually does"):
-    st.markdown(
-        "- Runs a short, repeatable benchmark and captures latency and throughput metrics.\n"
-        "- Estimates input vs compute vs idle vs compile time.\n"
-        "- Produces an evidence-backed recommendation list with confidence and expected impact."
-    )
 
 with st.expander("Limitations"):
     st.markdown(
-        "- This is not kernel-level profiling. It relies on end-to-end metrics and available traces.\n"
-        "- TPU-specific signals are only available when running on TPU with proper profiling hooks.\n"
-        "- Recommendations are heuristic and should be validated with full profiler data."
+        "- Metrics are end‑to‑end and best‑effort; kernel‑level signals require profiler artifacts.\n"
+        "- TPU‑specific behavior only appears when running on TPU.\n"
+        "- Recommendations are heuristic; validate with full profiling."
     )
+
 
 # Sidebar workflow
 st.sidebar.header("Workflow")
@@ -124,6 +121,21 @@ run_button = st.sidebar.button("Run Benchmark")
 
 st.sidebar.markdown("**4) Analyze & Optimize**")
 
+
+def _list_runs() -> List[str]:
+    if not ARTIFACTS_DIR.exists():
+        return []
+    runs = [p.name for p in ARTIFACTS_DIR.iterdir() if p.is_dir() and (p / "summary.json").exists()]
+    return sorted(runs)
+
+
+run_history = _list_runs()
+if run_history:
+    st.sidebar.markdown("**Run ID**")
+    selected_run = st.sidebar.selectbox("Select Run", run_history, index=len(run_history) - 1)
+else:
+    selected_run = None
+
 with st.sidebar.expander("Explain what's happening"):
     st.markdown(
         "1. Instrument: select a model and config.\n"
@@ -139,16 +151,6 @@ st.write(f"Input shape: {model_card['input_shape']}")
 st.write(f"Expected throughput: {model_card['throughput_notes']}")
 st.write(f"Typical bottlenecks: {model_card['bottlenecks']}")
 
-st.markdown("<div class='section-title'>Workflow Explanations</div>", unsafe_allow_html=True)
-with st.expander("1) Select Model"):
-    st.markdown("Pick a preloaded model. The lab uses lightweight versions to keep runs fast.")
-with st.expander("2) Configure Run"):
-    st.markdown("Set batch size, sequence length, warmup steps, and precision for repeatable benchmarks.")
-with st.expander("3) Run Benchmark"):
-    st.markdown("Runs inference (and optional micro training steps) to generate metrics and timings.")
-with st.expander("4) Analyze & Optimize"):
-    st.markdown("Computes bottleneck attribution and generates evidence-backed recommendations.")
-
 
 st.markdown("<div class='section-title'>Upload Artifacts</div>", unsafe_allow_html=True)
 col1, col2, col3 = st.columns(3)
@@ -161,39 +163,11 @@ with col3:
 
 model_upload = st.file_uploader("Upload model (TF SavedModel zip or ONNX) - experimental", type=["zip", "onnx"])
 st.caption("Model upload is experimental. Metrics/profile upload is recommended for now.")
-
-if uploaded_profile:
-    st.info("Profile zip uploaded. It will be stored alongside this run if you analyze.")
 if model_upload:
-    st.warning("Model upload is experimental and not yet executed. Use metrics/profile upload for analysis.")
+    st.warning("Model upload is experimental and not executed. Use metrics/profile upload for analysis.")
 
 
 status_box = st.empty()
-
-def _landing_charts():
-    sample_path = Path("sample_outputs/run_sample/metrics.csv")
-    if not sample_path.exists():
-        return
-    df = pd.read_csv(sample_path)
-    st.markdown("<div class='section-title'>Landing Preview</div>", unsafe_allow_html=True)
-    st.caption("Preview uses sample data. Run a benchmark for live results.")
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.plotly_chart(
-            px.line(df, x="step", y="latency_ms", title="Latency (ms)"),
-            use_container_width=True,
-        )
-    with c2:
-        st.plotly_chart(
-            px.line(df, x="step", y="throughput_items_per_sec", title="Throughput"),
-            use_container_width=True,
-        )
-    with c3:
-        util = 1 - (df["idle_time_ms"] / df["latency_ms"]).fillna(0)
-        st.plotly_chart(
-            px.line(x=df["step"], y=util, title="Utilization Proxy"),
-            use_container_width=True,
-        )
 
 
 def _save_profile_zip(run_dir: Path, uploaded) -> None:
@@ -204,6 +178,44 @@ def _save_profile_zip(run_dir: Path, uploaded) -> None:
     data = uploaded.read()
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         zf.extractall(profile_dir)
+
+
+def _compute_kpis(df: pd.DataFrame, attribution: Dict[str, float]) -> Dict[str, float | str]:
+    p50 = float(df["latency_ms"].median())
+    p90 = float(df["latency_ms"].quantile(0.9))
+    p99 = float(df["latency_ms"].quantile(0.99))
+    throughput = float(df["throughput_items_per_sec"].mean())
+    util_proxy = 1.0 - float(attribution.get("idle_bound", 0.0))
+    dominant = max(attribution, key=attribution.get) if attribution else "n/a"
+    dominant = dominant.replace("_bound", "").title()
+    return {
+        "p50": p50,
+        "p90": p90,
+        "p99": p99,
+        "throughput": throughput,
+        "util": util_proxy * 100.0,
+        "dominant": dominant,
+    }
+
+
+def _landing_preview() -> None:
+    sample_path = Path("sample_outputs/run_sample/metrics.csv")
+    if not sample_path.exists():
+        return
+    df = pd.read_csv(sample_path)
+    st.markdown("<div class='section-title'>Landing Preview</div>", unsafe_allow_html=True)
+    st.caption("Preview uses sample data. Run a benchmark for live results.")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.plotly_chart(px.line(df, x="step", y="latency_ms", title="Latency (ms)"), use_container_width=True)
+    with c2:
+        st.plotly_chart(
+            px.line(df, x="step", y="throughput_items_per_sec", title="Throughput"),
+            use_container_width=True,
+        )
+    with c3:
+        util = 1 - (df["idle_time_ms"] / df["latency_ms"]).fillna(0)
+        st.plotly_chart(px.line(x=df["step"], y=util, title="Utilization Proxy"), use_container_width=True)
 
 
 def _run_and_analyze() -> None:
@@ -234,7 +246,7 @@ def _run_and_analyze() -> None:
     force_sim = False
     if os.getenv("K_SERVICE") or os.getenv("TPUOPT_SIMULATE", "").lower() in {"1", "true", "yes"}:
         force_sim = True
-        st.info("Running in Cloud Run or simulation mode. Benchmark will use synthetic timing.")
+        st.info("Running in Cloud Run or simulation mode. Benchmark uses synthetic timing.")
 
     result = run_benchmark(config, step_callback=_on_step, force_simulate=force_sim)
 
@@ -306,154 +318,268 @@ if uploaded_metrics and not run_button:
     st.session_state["report_outputs"] = report_outputs
     st.session_state["chart_outputs"] = chart_outputs
 
+# Load selected run if no active session
+if selected_run and "summary" not in st.session_state:
+    run_dir = ARTIFACTS_DIR / selected_run
+    summary_path = run_dir / "summary.json"
+    metrics_path = run_dir / "metrics.csv"
+    if summary_path.exists() and metrics_path.exists():
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        st.session_state["run_id"] = selected_run
+        st.session_state["summary"] = summary
+        st.session_state["metrics_path"] = str(metrics_path)
+        st.session_state["charts_dir"] = str(run_dir / "charts")
 
 summary = st.session_state.get("summary")
 
-if summary:
-    kpis = summary.kpis
-    st.markdown("<div class='section-title'>Run Summary</div>", unsafe_allow_html=True)
-    if summary.device_type != "tpu":
-        st.info(f"TPU not detected. Running on {summary.device_type.upper()} baseline.")
-    k1, k2, k3, k4 = st.columns(4)
-    with k1:
-        st.markdown(
-            f\"\"\"<div class=\"kpi-card\"><div class=\"kpi-label\">p50 latency</div>
-            <div class=\"kpi-value\">{kpis.get('latency_p50_ms', 0):.2f} ms</div></div>\"\"\",
-            unsafe_allow_html=True,
+if not summary:
+    _landing_preview()
+    st.warning("No metrics available. Run a benchmark or upload metrics.csv to continue.")
+    st.stop()
+
+# Summary may be dict (from disk) or model instance
+if hasattr(summary, "kpis"):
+    summary_data = summary
+else:
+    summary_data = summary
+
+# Load metrics
+metrics_path = Path(st.session_state.get("metrics_path"))
+if not metrics_path.exists():
+    st.error("Metrics file not found. Run a benchmark to generate metrics.")
+    st.stop()
+
+metrics_df = load_metrics_df(metrics_path)
+
+# Attribution
+if hasattr(summary_data, "attribution"):
+    attribution = summary_data.attribution
+else:
+    attribution = summary_data.get("attribution", {})
+
+kpis = _compute_kpis(metrics_df, attribution)
+
+# KPI row
+st.markdown("<div class='section-title'>Run KPIs</div>", unsafe_allow_html=True)
+cols = st.columns(4)
+cols[0].markdown(
+    f"""<div class="kpi-card"><div class="kpi-label">Throughput</div>
+    <div class="kpi-value">{kpis['throughput']:.2f} items/s</div></div>""",
+    unsafe_allow_html=True,
+)
+cols[1].markdown(
+    f"""<div class="kpi-card"><div class="kpi-label">Avg Latency</div>
+    <div class="kpi-value">{metrics_df['latency_ms'].mean():.2f} ms</div></div>""",
+    unsafe_allow_html=True,
+)
+cols[2].markdown(
+    f"""<div class="kpi-card"><div class="kpi-label">Utilization Proxy</div>
+    <div class="kpi-value">{kpis['util']:.1f}%</div></div>""",
+    unsafe_allow_html=True,
+)
+cols[3].markdown(
+    f"""<div class="kpi-card"><div class="kpi-label">Dominant Bottleneck</div>
+    <div class="kpi-value">{kpis['dominant']}</div></div>""",
+    unsafe_allow_html=True,
+)
+
+st.markdown("---")
+
+# Tabs
+st.markdown("<div class='section-title'>Analysis</div>", unsafe_allow_html=True)
+tabs = st.tabs(["Overview", "Bottlenecks", "Recommendations", "Compare Runs", "Export"])
+
+with tabs[0]:
+    st.markdown("**Run Timeline**")
+    st.plotly_chart(
+        px.line(metrics_df, x="step", y="throughput_items_per_sec", title="Throughput over steps"),
+        use_container_width=True,
+    )
+
+    st.markdown("**Breakdown (stacked)**")
+    fig = go.Figure()
+    fig.add_trace(go.Bar(name="input", x=metrics_df["step"], y=metrics_df["host_input_time_ms"]))
+    fig.add_trace(go.Bar(name="compute", x=metrics_df["step"], y=metrics_df["compute_time_ms"]))
+    fig.add_trace(go.Bar(name="idle", x=metrics_df["step"], y=metrics_df["idle_time_ms"]))
+    if "compile_time_ms" in metrics_df.columns:
+        fig.add_trace(go.Bar(name="compile", x=metrics_df["step"], y=metrics_df["compile_time_ms"].fillna(0)))
+    fig.update_layout(barmode="stack", title="Latency breakdown (ms)")
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("**Latency distribution**")
+    hist = px.histogram(metrics_df, x="latency_ms", nbins=30, title="Latency distribution")
+    st.plotly_chart(hist, use_container_width=True)
+
+    st.markdown("**Latency percentiles**")
+    st.write({"p50": kpis["p50"], "p90": kpis["p90"], "p99": kpis["p99"]})
+
+with tabs[1]:
+    st.markdown("**Bottleneck attribution (%)**")
+    if attribution:
+        fig = px.pie(
+            names=list(attribution.keys()),
+            values=[v * 100 for v in attribution.values()],
+            hole=0.5,
         )
-    with k2:
-        st.markdown(
-            f\"\"\"<div class=\"kpi-card\"><div class=\"kpi-label\">p90 latency</div>
-            <div class=\"kpi-value\">{kpis.get('latency_p90_ms', 0):.2f} ms</div></div>\"\"\",
-            unsafe_allow_html=True,
-        )
-    with k3:
-        st.markdown(
-            f\"\"\"<div class=\"kpi-card\"><div class=\"kpi-label\">p99 latency</div>
-            <div class=\"kpi-value\">{kpis.get('latency_p99_ms', 0):.2f} ms</div></div>\"\"\",
-            unsafe_allow_html=True,
-        )
-    with k4:
-        st.markdown(
-            f\"\"\"<div class=\"kpi-card\"><div class=\"kpi-label\">throughput</div>
-            <div class=\"kpi-value\">{kpis.get('throughput_mean', 0):.2f} items/s</div></div>\"\"\",
-            unsafe_allow_html=True,
-        )
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.warning("Attribution not available. Check metrics input.")
 
-    tabs = st.tabs(["Overview", "Bottlenecks", "Recommendations", "Deep Analysis", "Raw Metrics", "Export"])
+    st.markdown("**How we infer bottlenecks**")
+    st.markdown(
+        "- Input/compute/idle/compile ratios derived from per‑step timings.\n"
+        "- Dominant ratio determines primary bottleneck.\n"
+        "- Confidence increases with stable metrics and available traces."
+    )
 
-    with tabs[0]:
-        st.markdown("**Copy-ready executive summary**")
-        for bullet in build_exec_summary(summary):
-            st.markdown(f"- {bullet}")
-        st.markdown("**Attribution**")
-        st.json(summary.attribution)
+    st.markdown("**What data we used**")
+    missing = []
+    for col in ["latency_ms", "host_input_time_ms", "compute_time_ms", "idle_time_ms"]:
+        if col not in metrics_df.columns:
+            missing.append(col)
+    if missing:
+        st.warning(f"Missing metrics: {', '.join(missing)}")
+    else:
+        st.success("All required metrics present")
 
-        if uploaded_compare:
-            compare_df = pd.read_csv(uploaded_compare)
-            base_df = load_metrics_df(Path(st.session_state.get("metrics_path")))
-            st.markdown("**Comparison (Run A vs Run B)**")
-            st.dataframe(
-                pd.DataFrame(
-                    {
-                        "metric": ["p50 latency", "p90 latency", "p99 latency", "throughput mean"],
-                        "run_a": [
-                            base_df["latency_ms"].median(),
-                            base_df["latency_ms"].quantile(0.9),
-                            base_df["latency_ms"].quantile(0.99),
-                            base_df["throughput_items_per_sec"].mean(),
-                        ],
-                        "run_b": [
-                            compare_df["latency_ms"].median(),
-                            compare_df["latency_ms"].quantile(0.9),
-                            compare_df["latency_ms"].quantile(0.99),
-                            compare_df["throughput_items_per_sec"].mean(),
-                        ],
-                    }
-                )
-            )
+    st.markdown("**Evidence table**")
+    latency_mean = metrics_df["latency_ms"].mean()
+    evidence = {
+        "input_ratio": float(metrics_df["host_input_time_ms"].mean() / latency_mean),
+        "compute_ratio": float(metrics_df["compute_time_ms"].mean() / latency_mean),
+        "idle_ratio": float(metrics_df["idle_time_ms"].mean() / latency_mean),
+        "compile_spike_score": float((metrics_df["compile_time_ms"].fillna(0) > 0).mean())
+        if "compile_time_ms" in metrics_df.columns
+        else 0.0,
+    }
+    st.dataframe(pd.DataFrame([evidence]))
 
-    with tabs[1]:
-        st.markdown("**Bottleneck attribution (%):**")
-        st.json(summary.attribution)
-        charts_dir = Path(st.session_state.get("charts_dir", ""))
-        if charts_dir.exists():
-            for chart in charts_dir.glob("*.html"):
-                st.components.v1.html(chart.read_text(encoding="utf-8"), height=400, scrolling=True)
+with tabs[2]:
+    recs = summary_data.recommendations if hasattr(summary_data, "recommendations") else summary_data.get("recommendations", [])
+    if not recs:
+        st.warning("No recommendations available. Collect more metrics or profiles.")
+    for rec in recs:
+        confidence = rec.confidence if hasattr(rec, "confidence") else rec.get("confidence", 0.0)
+        badge = "badge-low"
+        label = "Low"
+        if confidence >= 0.75:
+            badge = "badge-high"
+            label = "High"
+        elif confidence >= 0.5:
+            badge = "badge-med"
+            label = "Medium"
 
-    with tabs[2]:
-        for rec in summary.recommendations:
-            st.markdown(f"### {rec.title}")
-            st.markdown(f"**Symptom:** {rec.symptom}")
-            st.markdown(f"**Root cause:** {rec.likely_root_cause}")
-            st.markdown(f"**Evidence:** {rec.evidence}")
-            st.markdown(f"**Confidence:** {rec.confidence}")
-            st.markdown(f"**Expected impact:** {rec.expected_impact}")
-            st.markdown("**Action steps:**")
-            for step in rec.action_steps:
+        title = rec.title if hasattr(rec, "title") else rec.get("title", "Recommendation")
+        st.markdown("<div class='panel'>", unsafe_allow_html=True)
+        st.markdown(f"**{title}** <span class='badge {badge}'>Confidence: {label}</span>", unsafe_allow_html=True)
+        symptom = rec.symptom if hasattr(rec, "symptom") else rec.get("symptom", "")
+        cause = rec.likely_root_cause if hasattr(rec, "likely_root_cause") else rec.get("likely_root_cause", "")
+        st.markdown(f"**Symptom:** {symptom}")
+        st.markdown(f"**Root cause:** {cause}")
+        evidence = rec.evidence if hasattr(rec, "evidence") else rec.get("evidence", {})
+        st.markdown("**Evidence**")
+        st.write(evidence)
+        impact = rec.expected_impact if hasattr(rec, "expected_impact") else rec.get("expected_impact", "")
+        st.markdown(f"**Expected impact:** {impact}")
+        actions = rec.action_steps if hasattr(rec, "action_steps") else rec.get("action_steps", [])
+        with st.expander("Details"):
+            for step in actions:
                 st.markdown(f"- {step}")
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    with tabs[3]:
-        st.markdown("**Kernel & compiler signals (best effort)**")
-        run_id = st.session_state.get("run_id")
-        run_dir = ARTIFACTS_DIR / run_id
-        profile_dir = run_dir / "profile"
-        trace_path = profile_dir / "trace.json"
-        if trace_path.exists():
-            parsed = parse_trace_events(trace_path)
-            st.markdown("Top ops by total time (us)")
-            st.dataframe(parsed["top_ops"])
-            st.markdown("Categories")
-            st.dataframe(parsed["categories"])
-        else:
-            st.info("No trace.json found. Upload a profile zip to populate kernel signals.")
+with tabs[3]:
+    runs = _list_runs()
+    if len(runs) < 2:
+        st.info("Run history is limited. Execute another run to enable comparisons.")
+    else:
+        run_a = st.selectbox("Run A", runs, index=max(0, len(runs) - 2))
+        run_b = st.selectbox("Run B", runs, index=len(runs) - 1)
 
-        hlo_path = profile_dir / "hlo.txt"
-        if hlo_path.exists():
-            st.markdown("HLO op counts (best effort)")
-            st.dataframe(parse_hlo_stats(hlo_path))
-        else:
-            st.caption("HLO/MLIR dump not found. If available, add it to the profile zip.")
+        def _load_run(run_id: str) -> Tuple[pd.DataFrame, Dict]:
+            run_dir = ARTIFACTS_DIR / run_id
+            df = load_metrics_df(run_dir / "metrics.csv")
+            summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+            return df, summary
 
-        xla_log = profile_dir / "xla_compile.log"
-        if xla_log.exists():
-            st.markdown("XLA compile log summary")
-            st.json(parse_xla_compile_log(xla_log))
-        else:
-            st.caption("XLA compile log not found.")
+        df_a, sum_a = _load_run(run_a)
+        df_b, sum_b = _load_run(run_b)
 
-    with tabs[4]:
-        df = load_metrics_df(Path(st.session_state.get("metrics_path")))
-        st.dataframe(df)
+        attr_a = sum_a.get("attribution", {})
+        attr_b = sum_b.get("attribution", {})
+        kpi_a = _compute_kpis(df_a, attr_a)
+        kpi_b = _compute_kpis(df_b, attr_b)
 
-    with tabs[5]:
-        run_id = st.session_state.get("run_id")
-        run_dir = ARTIFACTS_DIR / run_id
-        if run_dir.exists():
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-                for file in run_dir.rglob("*"):
-                    if file.is_file():
-                        zf.write(file, arcname=file.relative_to(run_dir))
-            st.download_button(
-                "Download artifacts ZIP",
-                data=zip_buffer.getvalue(),
-                file_name=f"{run_id}_artifacts.zip",
-                mime="application/zip",
-            )
+        st.markdown("**Side‑by‑side KPIs**")
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown(f"**Run A: {run_a}**")
+            st.write(kpi_a)
+        with c2:
+            st.markdown(f"**Run B: {run_b}**")
+            st.write(kpi_b)
 
-    st.subheader("Engineer Details")
+        st.markdown("**Overlay charts**")
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=df_a["step"], y=df_a["throughput_items_per_sec"], name=f"{run_a} throughput"))
+        fig.add_trace(go.Scatter(x=df_b["step"], y=df_b["throughput_items_per_sec"], name=f"{run_b} throughput"))
+        fig.update_layout(title="Throughput comparison")
+        st.plotly_chart(fig, use_container_width=True)
+
+        util_a = 1 - (df_a["idle_time_ms"] / df_a["latency_ms"]).fillna(0)
+        util_b = 1 - (df_b["idle_time_ms"] / df_b["latency_ms"]).fillna(0)
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=df_a["step"], y=util_a, name=f"{run_a} utilization"))
+        fig.add_trace(go.Scatter(x=df_b["step"], y=util_b, name=f"{run_b} utilization"))
+        fig.update_layout(title="Utilization proxy comparison")
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.markdown("**What changed**")
+        st.write(
+            {
+                "Run A": {
+                    "batch_size_mean": float(df_a["batch_size"].mean()) if "batch_size" in df_a else "n/a",
+                    "precision": df_a["precision"].iloc[0] if "precision" in df_a else "n/a",
+                    "device": sum_a.get("device_type", "n/a"),
+                },
+                "Run B": {
+                    "batch_size_mean": float(df_b["batch_size"].mean()) if "batch_size" in df_b else "n/a",
+                    "precision": df_b["precision"].iloc[0] if "precision" in df_b else "n/a",
+                    "device": sum_b.get("device_type", "n/a"),
+                },
+            }
+        )
+
+with tabs[4]:
     run_id = st.session_state.get("run_id")
     run_dir = ARTIFACTS_DIR / run_id
-    profile_dir = run_dir / "profile"
-    st.json(
-        {
-            "metrics_path": st.session_state.get("metrics_path"),
-            "charts_dir": st.session_state.get("charts_dir"),
-            "report_outputs": st.session_state.get("report_outputs"),
-            "profile_dir": str(profile_dir) if profile_dir.exists() else None,
-        }
-    )
-else:
-    _landing_charts()
-    st.info("Run a benchmark or upload metrics.csv to see analysis.")
+    if run_dir.exists():
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            for file in run_dir.rglob("*"):
+                if file.is_file():
+                    zf.write(file, arcname=file.relative_to(run_dir))
+        st.download_button(
+            "Download artifacts ZIP",
+            data=zip_buffer.getvalue(),
+            file_name=f"{run_id}_artifacts.zip",
+            mime="application/zip",
+        )
+    else:
+        st.warning("No run artifacts available.")
+
+    st.markdown("**Copy Executive Summary**")
+    exec_summary: List[str] = []
+    if hasattr(summary_data, "recommendations"):
+        exec_summary = build_exec_summary(summary_data)
+    else:
+        kpi_dict = summary_data.get("kpis", {}) if isinstance(summary_data, dict) else {}
+        if kpi_dict.get("throughput_mean"):
+            exec_summary.append(f"Mean throughput: {kpi_dict['throughput_mean']:.2f} items/sec")
+        if kpi_dict.get("latency_p50_ms"):
+            exec_summary.append(f"p50 latency: {kpi_dict['latency_p50_ms']:.2f} ms")
+        recs = summary_data.get("recommendations", []) if isinstance(summary_data, dict) else []
+        if recs:
+            exec_summary.append(f"Top recommendation: {recs[0].get('title', 'Review recommendations')}")
+    if not exec_summary:
+        exec_summary = ["No summary available yet."]
+    st.text_area("Executive Summary", value="\n".join(f"- {b}" for b in exec_summary), height=140)
